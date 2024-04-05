@@ -42,11 +42,21 @@
 	dec hl
 	jr wait_word_loop
 
+; used when writing one psg update per sample
+; falls through to code which waits for < 256 samples
+.org 0x0010
+    outd					; cycles: 16
+	ex (sp), hl				; cycles: 19
+	ex (sp), hl				; cycles: 19
+	push de					; cycles: 11
+	inc de					; cycles: 6
+	pop de					; cycles: 10
+
 ; used to wait for < 256 samples
 ; called with rst 0x30 which uses 11 t-states
 ; the number of samples to wait is in the data, pointed at by hl
 ; one sample will take 80 t-states, then the rest will all take 81 t-states
-.org 0x0010
+.org 0x0018
 
 	; get number of samples to wait from data into b
 	; and move data pointer along

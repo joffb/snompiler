@@ -11,6 +11,15 @@ import gzip
 import sys
 import os 
 
+RST_00 = 0xc7
+RST_08 = 0xcf
+RST_10 = 0xd7
+RST_18 = 0xdf
+RST_20 = 0xe7
+RST_28 = 0xef
+RST_30 = 0xf7
+RST_38 = 0xff
+
 def gd3_parse(data):
 
     header = struct.unpack("<III", data[0:12])
@@ -162,17 +171,26 @@ while processing_done == False:
             # write one sn update and wait for rest of sample
             if len(sn_writes) == 1:
 
-                code_data.append(0xe7)  # rst 0x20
-
                 out_data = out_data + sn_writes[0:1]
                 sn_writes = sn_writes[1:]
 
                 sample_wait = sample_wait - 1
 
+                # special case where we write one sn value then wait for < 256 samples
+                if sample_wait >= 1 and sample_wait <= 255:
+
+                    code_data.append(RST_10)  # rst 0x10
+                    out_data = out_data + [sample_wait]
+                    sample_wait = 0
+
+                else:
+
+                    code_data.append(RST_20)  # rst 0x20
+
             # write two sn updates and wait for rest of sample
             elif len(sn_writes) == 2:
 
-                code_data.append(0xef)  # rst 0x28
+                code_data.append(RST_28)  # rst 0x28
 
                 out_data = out_data + sn_writes[0:2]
                 sn_writes = sn_writes[2:]
@@ -182,7 +200,7 @@ while processing_done == False:
             # write three sn updates and wait for rest of sample
             elif len(sn_writes) == 3:
 
-                code_data.append(0xf7)   # rst 0x30
+                code_data.append(RST_30)   # rst 0x30
 
                 out_data = out_data + sn_writes[0:3]
                 sn_writes = sn_writes[3:]
@@ -192,7 +210,7 @@ while processing_done == False:
             # write four sn updates - this takes a bit more than one sample
             elif len(sn_writes) >= 4:
 
-                code_data.append(0xff)   # rst 0x38
+                code_data.append(RST_38)   # rst 0x38
 
                 out_data = out_data + sn_writes[0:4]
                 sn_writes = sn_writes[4:]
@@ -209,14 +227,14 @@ while processing_done == False:
             # two bytes of sample wait time
             if sample_wait >= 256:
 
-                code_data = code_data + [0xcf] # rst 0x08
+                code_data = code_data + [RST_08] # rst 0x08
 
                 out_data = out_data + [sample_wait & 0xff, (sample_wait >> 8) & 0xff]
 
             # one byte of sample wait time
             else:
 
-                code_data = code_data + [0xd7]  # rst 0x10
+                code_data = code_data + [RST_18]  # rst 0x18
 
                 out_data = out_data + [sample_wait]
 
@@ -273,7 +291,7 @@ print("* song data is " + str(total_byte_count) + " bytes total")
 print("* output " + str(total_samples_written) + "/" + str(vgm_sample_total) + " samples (" + str(round(sample_percentage, 1)) + "% of song)")
 
 # read player code
-playerfile = open(os.path.dirname(os.path.abspath(__file__)) + "\player.sms", "rb")
+playerfile = open(os.path.dirname(os.path.abspath(__file__)) + "/player.sms", "rb")
 player_data = playerfile.read()
 playerfile.close()
 
