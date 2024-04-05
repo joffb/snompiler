@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# snompiler
+# snompiler v0.2
 # Joe Kennedy 2024
 # almost sample accurate SN76489 VGM compiler/player for Sega Master System
 # usage:
@@ -162,7 +162,7 @@ while processing_done == False:
             # write one sn update and wait for rest of sample
             if len(sn_writes) == 1:
 
-                code_data.append(0xdf)  # rst 0x18
+                code_data.append(0xe7)  # rst 0x20
 
                 out_data = out_data + sn_writes[0:1]
                 sn_writes = sn_writes[1:]
@@ -172,7 +172,7 @@ while processing_done == False:
             # write two sn updates and wait for rest of sample
             elif len(sn_writes) == 2:
 
-                code_data.append(0xe7)  # rst 0x20
+                code_data.append(0xef)  # rst 0x28
 
                 out_data = out_data + sn_writes[0:2]
                 sn_writes = sn_writes[2:]
@@ -182,7 +182,7 @@ while processing_done == False:
             # write three sn updates and wait for rest of sample
             elif len(sn_writes) == 3:
 
-                code_data.append(0xef)   # rst 0x28
+                code_data.append(0xf7)   # rst 0x30
 
                 out_data = out_data + sn_writes[0:3]
                 sn_writes = sn_writes[3:]
@@ -192,7 +192,7 @@ while processing_done == False:
             # write four sn updates - this takes a bit more than one sample
             elif len(sn_writes) >= 4:
 
-                code_data.append(0xf7)   # rst 0x30
+                code_data.append(0xff)   # rst 0x38
 
                 out_data = out_data + sn_writes[0:4]
                 sn_writes = sn_writes[4:]
@@ -206,14 +206,19 @@ while processing_done == False:
         # loop out the rest of them
         if (sample_wait >= 1):
 
-            code_data = code_data + [
-                0x11,                       # ld de, sample_wait
-                sample_wait & 0xff, 
-                (sample_wait >> 8) & 0xff,
-                0xcf                        # rst 0x08             
-            ]
+            # two bytes of sample wait time
+            if sample_wait >= 256:
 
-            byte_count += 4
+                code_data = code_data + [0xcf] # rst 0x08
+
+                out_data = out_data + [sample_wait & 0xff, (sample_wait >> 8) & 0xff]
+
+            # one byte of sample wait time
+            else:
+
+                code_data = code_data + [0xd7]  # rst 0x10
+
+                out_data = out_data + [sample_wait]
 
     # almost filled this 16k bank up, or reached the bank limit, or reached the end of the music
     if (len(out_data) + len(code_data) > 16350) or bank == BANK_LIMIT or cmd == 0x66:
@@ -239,19 +244,12 @@ while processing_done == False:
                 0xcd, 0x80, 0x00    # call bank_swap (it should be at 0x0080)
             ]
         
-
-        # out data will immediately follow the end of the code
-        out_data_address = 0x8000 + len(code_data) + 3
-
-        # properly set hl for outi instructions
-        # ld hl, out_data_address
-        code_data = [0x21, out_data_address & 0xff, (out_data_address >> 8) & 0xff] + code_data
-
         # add length of output data to byte_count for our totals
         byte_count = len(code_data) + len(out_data)
 
         # store binary
-        bank_bin[bank] = code_data + out_data + ([0xff] * (16384 - byte_count))
+        out_data.reverse()
+        bank_bin[bank] = code_data + ([0xff] * (16384 - byte_count)) + out_data
 
         total_byte_count += byte_count
         print("\t" + str(byte_count)  + " bytes written")

@@ -30,42 +30,43 @@
 .org 0x0000
 	jp init
 
-; used to wait a variable number of samples
+; used to wait for >= 256 samples 
 ; preceded by `ld de, nnnn` which uses 10 t-states
 ; called with rst 0x08 which uses 11 t-states
-; de: number of samples to wait
-.org 0x004
-wait_sample_loop:
-
-	; this first bit will be skipped in the first loop
-	; and is equivalent in cycles to the
-	;	`ld de, nnnn`, `rst 0x08` and the final `ret`
-
-    push de                 ; cycles: 11
-	inc de					; cycles: 6
-	nop						; cycles: 4
-    pop de                  ; cycles: 10
-
 .org 0x0008
-	cp a, (hl)				; cycles: 7
-	cp a, (hl)				; cycles: 7
-	nop						; cycles: 4
-	nop						; cycles: 4
-	nop						; cycles: 4
 
-	; decrement counter
-    dec de                  ; cycles: 6
-    ld a, d                 ; cycles: 4
-    or a, e                 ; cycles: 4
-    jp nz, wait_sample_loop ; cycles: 10
+	; get amount of samples to wait into de
+	ld e, (hl)
+	dec hl
+	ld d, (hl)
+	dec hl
+	jr wait_word_loop
 
-    ret                     ; cycles: 10
+; used to wait for < 256 samples
+; called with rst 0x30 which uses 11 t-states
+; the number of samples to wait is in the data, pointed at by hl
+; one sample will take 80 t-states, then the rest will all take 81 t-states
+.org 0x0010
+
+	; get number of samples to wait from data into b
+	; and move data pointer along
+	ld b, (hl)
+	dec hl
+
+	; djnz if b > 0 and waste another sample's worth of time
+	wait_byte_loop:
+	djnz wait_byte_time_waste
+
+	; waste more time to round out the sample
+	ex (sp), hl				; cycles: 19
+	ex (sp), hl				; cycles: 19
+	ret						; cycles: 11
 
 ; used when writing one psg update per sample
 ; called with rst 0x18 which uses 11 t-states
 ; for a total of 81 t-states
-.org 0x0018
-    outi					; cycles: 16
+.org 0x0020
+    outd					; cycles: 16
 	ex (sp), hl				; cycles: 19
 	ex (sp), hl				; cycles: 19
 	dec de					; cycles: 6
@@ -74,9 +75,9 @@ wait_sample_loop:
 ; used when writing two psg updates per sample
 ; called with rst 0x20 which uses 11 t-states
 ; for a total of 81 t-states
-.org 0x0020
-	outi				; cycles: 16
-	outi				; cycles: 16
+.org 0x0028
+	outd				; cycles: 16
+	outd				; cycles: 16
 	push hl				; cycles: 11
 	pop hl				; cycles: 10
 	cp a, (hl)			; cycles: 7
@@ -85,28 +86,60 @@ wait_sample_loop:
 ; used when writing three psg updates per sample
 ; called with rst 0x28 which uses 11 t-states
 ; for a total of 80 t-states
-.org 0x0028
-	outi				; cycles: 16
-	outi				; cycles: 16
-	outi				; cycles: 16
+.org 0x0030
+	outd				; cycles: 16
+	outd				; cycles: 16
+	outd				; cycles: 16
 	inc (hl)			; cycles: 11	has no effect as data is in rom
 	ret					; cycles: 10
 
 ; used when writing four psg updates per sample
 ; called with rst 0x30 which uses 11 t-states
 ; for a total of 85 t-states
-.org 0x0030
-	outi				; cycles: 16
-	outi				; cycles: 16
-	outi				; cycles: 16
-	outi				; cycles: 16
+.org 0x0038
+	outd				; cycles: 16
+	outd				; cycles: 16
+	outd				; cycles: 16
+	outd				; cycles: 16
 	ret                 ; cycles: 10
+
+; this full loop with `ret z` not happening uses 81 cycles
+; the first half with the `ret z` happening uses 32 cycles
+; added to the cycles for the initial `rst 0x08` call is 32 + 49 = 81 cycles
+wait_word_loop:
+
+	cp a, (hl)				; cycles: 7
+    dec de					; cycles: 6
+    ld a, d					; cycles: 4
+    or a, e					; cycles: 4
+    ret z					; cycles: 11/5
+
+	bit 0, (hl)				; cycles: 12
+	bit 0, (hl)				; cycles: 12
+	bit 0, (hl)				; cycles: 12
+	cp a, (hl)				; cycles: 7
+
+    jr wait_word_loop		; cycles: 12
+
+; jumped to from the djnz in `rst 0x10` which uses 13 cycles
+; for a total of 81 cycles
+wait_byte_time_waste:
+
+	ex (sp), hl				; cycles: 19
+	ex (sp), hl				; cycles: 19
+	cp a, (hl)				; cycles: 7
+	cp a, (hl)				; cycles: 7
+	nop						; cycles: 4
+	jr wait_byte_loop		; cycles 12
+
 
 .org 0x0066
 	retn
 
 .org 0x0080
 
+; preceded by `ld a, n` and `call bank_swap` which use 24 cycles
+; which comes to a total of 86 cycles
 ; a: bank to change to
 bank_swap:
 
@@ -118,6 +151,9 @@ bank_swap:
 
     ; swap return address with hl
     ex (sp), hl
+
+	; point hl at end of bank where the data starts
+	ld hl, 0xbfff
 
     ; ret jumps to 0x8000
     ret
@@ -250,6 +286,9 @@ init:
 	; keep SN output port in c
 	ld c, 0x7f
 
+	; point hl at out data 
+	ld hl, 0xbfff
+
 	; jump to start of song
     jp 0x8000
 
@@ -322,7 +361,7 @@ font_palette:
 font_palette_end:
 
 title_string:
-	.db "snompiler v0.1", 0
+	.db "snompiler v0.2", 0
 	.db "Joe Kennedy 2024", 0
 
 .SMSHEADER

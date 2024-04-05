@@ -25,18 +25,21 @@ The code that's executed is followed by all the data which will be written to th
 
 Essentially the code does:
 ```asm
-    ; point hl at the data which will be output to the SN chip
-    ld hl, output_data
 
     ; write one SN output value and then wait for the rest of the sample
-    ; the rst 0x18 call will use outi which gets the value pointed at by hl
+    ; the rst 0x18 call will use outd which gets the value pointed at by hl
     ; outputs it to the SN chip, then moves hl on to the next value
     ; then we waste time until a total of 81 cycles have elapsed
-    rst 0x18
+    rst 0x20
 
-    ; wait for 12 samples (12 * 81 cycles)
-    ld de, 12
+    ; wait for >= 256 samples, the amount of samples to wait is stored in the data
     rst 0x08
+
+    ; write three SN output values
+    rst 0x30
+
+    ; wait for < 256 samples, the amount of samples to wait is stored in the data
+    rst 0x10
 
     ;
     ;   lots more updates go here
@@ -84,5 +87,4 @@ The other example files which don't use this feature seem to work fine though, a
 
 + Doesn't support the VGM loop point, it just jumps back to the start of the song
 + Would be good if all `rst` calls took exactly 81 samples
-+ Would be good if the sample wait `rst` call could read its sample wait timer from the data, rather than using `ld de, nnnn` (would save 1 byte per wait)
 + Would be good if it compensated for the cycles spent switching banks - at the minute it takes like 76 cycles which is basicly a sample
